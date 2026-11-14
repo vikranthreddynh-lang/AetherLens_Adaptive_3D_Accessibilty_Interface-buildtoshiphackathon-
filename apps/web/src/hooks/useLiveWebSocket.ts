@@ -47,6 +47,10 @@ export function useLiveWebSocket(options: UseLiveWebSocketOptions) {
   const currentTicketRef = useRef(ticket);
   currentTicketRef.current = ticket || currentTicketRef.current;
 
+  // HTTP fallback state for serverless environments (e.g. Vercel)
+  const isHttpModeRef = useRef(false);
+  const seenEventsRef = useRef<Set<string>>(new Set());
+
   // Keep latest callbacks in refs so connect doesn't recreate when parent re-renders
   const onEventRef = useRef(onEvent);
   const onCueRef = useRef(onCue);
@@ -64,10 +68,16 @@ export function useLiveWebSocket(options: UseLiveWebSocketOptions) {
 
   const connect = useCallback((overrideTicket?: string) => {
     const activeTicket = overrideTicket || currentTicketRef.current;
-    if (!sessionId || !activeTicket) return;
+    if (!sessionId) return;
 
     setConnectionState((prev) => (prev === 'idle' ? 'connecting' : prev));
     setErrorMessage(null);
+
+    // If already established in HTTP mode, don't attempt raw WebSocket
+    if (isHttpModeRef.current) {
+      setConnectionState('connected');
+      return;
+    }
 
     // Build absolute WS URL
     let fullWsUrl = '';
@@ -80,127 +90,128 @@ export function useLiveWebSocket(options: UseLiveWebSocketOptions) {
       fullWsUrl = `${protocol}//${host}/api/v1/live?ticket=${encodeURIComponent(activeTicket)}`;
     }
 
-    const ws = new WebSocket(fullWsUrl);
-    socketRef.current = ws;
+    try {
+      const ws = new WebSocket(fullWsUrl);
+      socketRef.current = ws;
 
-    ws.onopen = () => {
-      setConnectionState('connected');
-      reconnectAttemptsRef.current = 0;
-      setErrorMessage(null);
+      ws.onopen = () => {
+        setConnectionState('connected');
+        reconnectAttemptsRef.current = 0;
+        setErrorMessage(null);
+        isHttpModeRef.current = false;
 
-      // Send initial preferences update
-      ws.send(
-        JSON.stringify({
-          type: 'preferences.update',
-          payload: { preferences: preferencesRef.current },
-        })
-      );
-    };
+        // Send initial preferences update
+        ws.send(
+          JSON.stringify({
+            type: 'preferences.update',
+            payload: { preferences: preferencesRef.current },
+          })
+        );
+      };
 
-    ws.onmessage = (event) => {
-      try {
-        const rawJson = JSON.parse(event.data);
-        const parsed = WsServerMessageSchema.safeParse(rawJson);
+      ws.onmessage = (event) => {
+        try {
+          const rawJson = JSON.parse(event.data);
+          const parsed = WsServerMessageSchema.safeParse(rawJson);
 
-        if (!parsed.success) {
+          if (!parsed.success) {
+            return;
+          }
+
+          const msg: WsServerMessage = parsed.data;
+
+          switch (msg.type) {
+            case 'session.ready':
+              setConnectionState('connected');
+              break;
+
+            case 'session.status':
+              setElapsedMs(msg.payload.elapsedMs);
+              setIsSessionPaused(msg.payload.state === 'paused');
+              if (onStatusChangeRef.current) {
+                onStatusChangeRef.current(msg.payload);
+              }
+              break;
+
+            case 'environment.event':
+              if (onEventRef.current) {
+                seenEventsRef.current.add(msg.payload.event.id);
+                onEventRef.current(msg.payload.event);
+              }
+              break;
+
+            case 'environment.cue':
+              if (onCueRef.current) {
+                onCueRef.current(msg.payload.cue);
+              }
+              break;
+
+            case 'session.reconnecting':
+              setConnectionState('reconnecting');
+              break;
+
+            case 'session.error':
+              setErrorMessage(msg.payload.message);
+              if (onErrorRef.current) onErrorRef.current(new Error(msg.payload.message));
+              break;
+
+            case 'session.ended':
+              setConnectionState('ended');
+              if (onSessionEndedRef.current) {
+                onSessionEndedRef.current(msg.payload.reason, msg.payload.finalEventCount);
+              }
+              break;
+
+            default:
+              break;
+          }
+        } catch {
+          // Parse error
+        }
+      };
+
+      ws.onclose = () => {
+        if (isManuallyClosedRef.current) {
+          setConnectionState('ended');
           return;
         }
 
-        const msg: WsServerMessage = parsed.data;
-
-        switch (msg.type) {
-          case 'session.ready':
-            setConnectionState('connected');
-            break;
-
-          case 'session.status':
-            setElapsedMs(msg.payload.elapsedMs);
-            setIsSessionPaused(msg.payload.state === 'paused');
-            if (onStatusChangeRef.current) {
-              onStatusChangeRef.current(msg.payload);
-            }
-            break;
-
-          case 'environment.event':
-            if (onEventRef.current) {
-              onEventRef.current(msg.payload.event);
-            }
-            break;
-
-          case 'environment.cue':
-            if (onCueRef.current) {
-              onCueRef.current(msg.payload.cue);
-            }
-            break;
-
-          case 'session.reconnecting':
-            setConnectionState('reconnecting');
-            break;
-
-          case 'session.error':
-            setErrorMessage(msg.payload.message);
-            if (onErrorRef.current) onErrorRef.current(new Error(msg.payload.message));
-            break;
-
-          case 'session.ended':
-            setConnectionState('ended');
-            if (onSessionEndedRef.current) {
-              onSessionEndedRef.current(msg.payload.reason, msg.payload.finalEventCount);
-            }
-            break;
-
-          default:
-            break;
+        // Try ticket refresh once, otherwise engage serverless HTTP streaming fallback
+        if (reconnectAttemptsRef.current < 1) {
+          reconnectAttemptsRef.current += 1;
+          setConnectionState('reconnecting');
+          apiClient
+            .refreshTicket(sessionId)
+            .then((newTicket) => {
+              currentTicketRef.current = newTicket;
+              connect(newTicket);
+            })
+            .catch(() => {
+              // Switch to HTTP streaming mode on serverless hosts
+              isHttpModeRef.current = true;
+              setConnectionState('connected');
+              setErrorMessage(null);
+            });
+        } else {
+          // Fall back seamlessly to HTTP streaming mode
+          isHttpModeRef.current = true;
+          setConnectionState('connected');
+          setErrorMessage(null);
         }
-      } catch {
-        // Parse error
-      }
-    };
+      };
 
-    ws.onclose = () => {
-      if (isManuallyClosedRef.current) {
-        setConnectionState('ended');
-        return;
-      }
-
-      // Try automatic ticket refresh & reconnect if unexpected close occurs
-      if (reconnectAttemptsRef.current < 2) {
-        reconnectAttemptsRef.current += 1;
-        setConnectionState('reconnecting');
-        apiClient
-          .refreshTicket(sessionId)
-          .then((newTicket) => {
-            currentTicketRef.current = newTicket;
-            connect(newTicket);
-          })
-          .catch(() => {
-            setConnectionState('disconnected');
-          });
-      } else {
-        setConnectionState('disconnected');
-      }
-    };
-
-    ws.onerror = () => {
-      // If we haven't exhausted reconnects, attempt ticket refresh
-      if (reconnectAttemptsRef.current < 2 && !isManuallyClosedRef.current) {
-        reconnectAttemptsRef.current += 1;
-        setConnectionState('reconnecting');
-        apiClient
-          .refreshTicket(sessionId)
-          .then((newTicket) => {
-            currentTicketRef.current = newTicket;
-            connect(newTicket);
-          })
-          .catch((err) => {
-            setConnectionState('error');
-            setErrorMessage((err as Error).message || 'WebSocket connection encountered an error.');
-          });
-      } else {
-        setConnectionState('error');
-        setErrorMessage('WebSocket connection encountered an error. Click Reconnect to try again.');
-      }
-    };
+      ws.onerror = () => {
+        // Fall back seamlessly to HTTP streaming mode on serverless hosts
+        isHttpModeRef.current = true;
+        setConnectionState('connected');
+        setErrorMessage(null);
+      };
+    } catch {
+      // If WebSocket constructor throws (e.g. invalid protocol on edge serverless), switch to HTTP mode
+      isHttpModeRef.current = true;
+      setConnectionState('connected');
+      setErrorMessage(null);
+    }
   }, [sessionId, wsUrl]);
 
   // Connect on mount
@@ -217,7 +228,31 @@ export function useLiveWebSocket(options: UseLiveWebSocketOptions) {
     };
   }, [connect]);
 
-  // Sync preference updates over open socket without reconnecting
+  // Periodic HTTP polling when in serverless / Vercel fallback mode
+  useEffect(() => {
+    if (connectionState !== 'connected' || !isHttpModeRef.current) return;
+
+    const interval = setInterval(() => {
+      apiClient
+        .getEvents(sessionId)
+        .then((res) => {
+          if (res.elapsedMs) setElapsedMs(res.elapsedMs);
+          if (res.events && Array.isArray(res.events)) {
+            for (const evt of res.events as EnvironmentalEvent[]) {
+              if (!seenEventsRef.current.has(evt.id)) {
+                seenEventsRef.current.add(evt.id);
+                onEventRef.current?.(evt);
+              }
+            }
+          }
+        })
+        .catch(() => {});
+    }, 2500);
+
+    return () => clearInterval(interval);
+  }, [connectionState, sessionId]);
+
+  // Sync preference updates
   useEffect(() => {
     if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
       socketRef.current.send(
@@ -226,8 +261,10 @@ export function useLiveWebSocket(options: UseLiveWebSocketOptions) {
           payload: { preferences },
         })
       );
+    } else if (isHttpModeRef.current) {
+      apiClient.streamMedia(sessionId, { preferences }).catch(() => {});
     }
-  }, [preferences]);
+  }, [preferences, sessionId]);
 
   const send = useCallback((message: object) => {
     if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
@@ -248,11 +285,12 @@ export function useLiveWebSocket(options: UseLiveWebSocketOptions) {
   const stop = useCallback(() => {
     isManuallyClosedRef.current = true;
     send({ type: 'session.stop', payload: {} });
+    apiClient.stopLiveSession(sessionId).catch(() => {});
     setConnectionState('ended');
     if (socketRef.current) {
       socketRef.current.close(1000, 'User stopped session');
     }
-  }, [send]);
+  }, [send, sessionId]);
 
   const toggleCamera = useCallback((enable: boolean) => {
     send({ type: enable ? 'camera.enable' : 'camera.disable', payload: {} });
@@ -264,6 +302,22 @@ export function useLiveWebSocket(options: UseLiveWebSocketOptions) {
 
   const sendVideoFrame = useCallback(
     (data: string, mimeType = 'image/jpeg') => {
+      if (isHttpModeRef.current) {
+        apiClient
+          .streamMedia(sessionId, { videoFrame: { data, mimeType } })
+          .then((res) => {
+            if (res.events && Array.isArray(res.events)) {
+              for (const evt of res.events as EnvironmentalEvent[]) {
+                if (!seenEventsRef.current.has(evt.id)) {
+                  seenEventsRef.current.add(evt.id);
+                  onEventRef.current?.(evt);
+                }
+              }
+            }
+          })
+          .catch(() => {});
+        return;
+      }
       send({
         type: 'media.video_frame',
         payload: {
@@ -273,11 +327,27 @@ export function useLiveWebSocket(options: UseLiveWebSocketOptions) {
         },
       });
     },
-    [send]
+    [send, sessionId]
   );
 
   const sendAudioChunk = useCallback(
     (data: string, mimeType = 'audio/pcm;rate=16000') => {
+      if (isHttpModeRef.current) {
+        apiClient
+          .streamMedia(sessionId, { audioChunk: { data, mimeType } })
+          .then((res) => {
+            if (res.events && Array.isArray(res.events)) {
+              for (const evt of res.events as EnvironmentalEvent[]) {
+                if (!seenEventsRef.current.has(evt.id)) {
+                  seenEventsRef.current.add(evt.id);
+                  onEventRef.current?.(evt);
+                }
+              }
+            }
+          })
+          .catch(() => {});
+        return;
+      }
       send({
         type: 'media.audio_chunk',
         payload: {
@@ -288,17 +358,33 @@ export function useLiveWebSocket(options: UseLiveWebSocketOptions) {
         },
       });
     },
-    [send]
+    [send, sessionId]
   );
 
   const sendVisualObservation = useCallback(
     (observation: LocalVisualObservation) => {
+      if (isHttpModeRef.current) {
+        apiClient
+          .streamMedia(sessionId, { localObservation: observation })
+          .then((res) => {
+            if (res.events && Array.isArray(res.events)) {
+              for (const evt of res.events as EnvironmentalEvent[]) {
+                if (!seenEventsRef.current.has(evt.id)) {
+                  seenEventsRef.current.add(evt.id);
+                  onEventRef.current?.(evt);
+                }
+              }
+            }
+          })
+          .catch(() => {});
+        return;
+      }
       send({
         type: 'client.visual_observation',
         payload: { observation },
       });
     },
-    [send]
+    [send, sessionId]
   );
 
   return {
@@ -314,6 +400,9 @@ export function useLiveWebSocket(options: UseLiveWebSocketOptions) {
     sendVideoFrame,
     sendAudioChunk,
     sendVisualObservation,
-    reconnect: () => connect(),
+    reconnect: () => {
+      isHttpModeRef.current = false;
+      connect();
+    },
   };
 }

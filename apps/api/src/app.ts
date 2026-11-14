@@ -20,7 +20,8 @@ app.use(express.urlencoded({ extended: true, limit: '5mb' }));
 app.use(requestIdMiddleware);
 app.use(apiRateLimiter);
 
-// API v1 Routes
+// Health check routes
+app.use('/health', healthRouter);
 app.use('/api/v1/health', healthRouter);
 app.use('/api/v1/me', profileRouter);
 app.use('/api/v1/live-sessions', liveSessionsRouter);

@@ -61,6 +61,49 @@ export const apiClient = {
     });
   },
 
+  async streamMedia(
+    sessionId: string,
+    payload: {
+      videoFrame?: { data: string; mimeType: string };
+      audioChunk?: { data: string; mimeType: string };
+      localObservation?: unknown;
+      preferences?: unknown;
+    }
+  ): Promise<{
+    success: boolean;
+    sessionId: string;
+    events: unknown[];
+    status: { state: string; elapsedMs: number; activeSpeaker: string | null };
+  }> {
+    const headers = await getAuthHeaders();
+    const res = await fetch(`${API_BASE}/live-sessions/${sessionId}/stream`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      throw new Error(`Streaming failed (${res.status})`);
+    }
+    return res.json();
+  },
+
+  async getEvents(sessionId: string): Promise<{
+    sessionId: string;
+    events: unknown[];
+    activeSpeaker: string | null;
+    elapsedMs: number;
+  }> {
+    const headers = await getAuthHeaders();
+    const res = await fetch(`${API_BASE}/live-sessions/${sessionId}/events`, {
+      method: 'GET',
+      headers,
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to fetch events (${res.status})`);
+    }
+    return res.json();
+  },
+
   async sendFeedback(sessionId: string, feedback: SessionFeedback): Promise<void> {
     const headers = await getAuthHeaders();
     await fetch(`${API_BASE}/live-sessions/${sessionId}/feedback`, {

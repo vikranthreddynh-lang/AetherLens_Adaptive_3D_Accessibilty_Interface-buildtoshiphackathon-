@@ -97,6 +97,69 @@ liveSessionsRouter.post('/:id/ticket', optionalAuth, (req: RequestWithId, res, n
   }
 });
 
+liveSessionsRouter.post('/:id/stream', optionalAuth, async (req: RequestWithId, res, next) => {
+  try {
+    const sessionId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    let session = sessionManager.getSession(sessionId);
+    if (!session) {
+      session = sessionManager.createSession(sessionId, req.user?.id || null, 'group_discussion');
+    }
+
+    const { videoFrame, audioChunk, localObservation, preferences } = req.body;
+    if (preferences) {
+      session.preferences = preferences;
+      session.engine.updatePreferences(preferences);
+    }
+
+    if (localObservation) {
+      session.engine.ingestClientVisualObservation(localObservation);
+    }
+
+    if (videoFrame?.data) {
+      session.gemini.pushVideoFrame(videoFrame.data, videoFrame.mimeType || 'image/jpeg');
+    }
+    if (audioChunk?.data) {
+      session.gemini.pushAudioChunk(audioChunk.data, audioChunk.mimeType || 'audio/pcm;rate=16000');
+    }
+
+    const recentEvents = session.engine.getActiveEvents();
+    const activeSpeaker = session.engine.getActiveSpeaker();
+
+    res.json({
+      success: true,
+      sessionId,
+      events: recentEvents,
+      status: {
+        state: session.state,
+        elapsedMs: Date.now() - session.startedAt,
+        activeSpeaker,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+liveSessionsRouter.get('/:id/events', optionalAuth, (req, res, next) => {
+  try {
+    const sessionId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const session = sessionManager.getSession(sessionId);
+    if (!session) {
+      res.json({ sessionId, events: [], activeSpeaker: null, elapsedMs: 0 });
+      return;
+    }
+
+    res.json({
+      sessionId,
+      events: session.engine.getActiveEvents(),
+      activeSpeaker: session.engine.getActiveSpeaker(),
+      elapsedMs: Date.now() - session.startedAt,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 liveSessionsRouter.post('/:id/stop', (req, res) => {
   const sessionId = req.params.id;
   sessionManager.stopSession(sessionId, 'Client triggered stop endpoint');
