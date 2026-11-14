@@ -18,8 +18,10 @@
     "test": "node tests/runAll.js",
     "typecheck": "npm run typecheck --workspace=@senseweave/shared && npm run typecheck --workspace=@senseweave/api && npm run typecheck --workspace=@senseweave/web"
   },
-  "devDependencies": {
-    "concurrently": "^9.1.2",
+  "dependencies": {
     "typescript": "^5.7.3"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
   }
 }
