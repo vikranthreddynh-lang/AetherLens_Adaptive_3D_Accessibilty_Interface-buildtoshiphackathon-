@@ -1,78 +1,105 @@
-# AetherLens — Adaptive 3D Accessibility Interface
+# SenseWeave
 
-AetherLens is a high-craft frontend shell for an inclusive spatial interface, built around the **What-If Accessibility Pathway Engine**. It demonstrates how people navigating institutional directives (e.g. university notices, administrative deadlines) can explore documented alternatives, identify missing policy information, and formulate targeted clarification questions.
+SenseWeave is an environmental awareness prototype for DeafBlind, blind, and low-vision people. It turns observed events into user-controlled text, screen-reader, audio, haptic, and Braille-compatible feedback. The `/demo` page uses synthetic scenarios and works without camera, microphone, or API credentials.
 
-> *"Instructions can be clear and still be impossible for someone to follow. AetherLens helps people explore documented alternatives and identify what the source does not say."*
+> **Safety:** SenseWeave is a prototype, not a mobility aid. Do not use it to navigate, cross streets, or detect hazards. It can miss events or describe them incorrectly. Keep established mobility aids and support in use.
 
----
+## Features
 
-## 🎨 Strict Five-Color Palette System
+- Synthetic interactive scenarios at `/demo`, with audio, haptic, Braille text, and timeline controls.
+- Live session flow with selectable environment, optional camera/microphone, event timeline, and session recap.
+- Sign in, sign up, password reset, onboarding, saved sessions, privacy information, and accessibility preferences via Supabase.
+- Express API and ticket-authenticated WebSocket service for live sessions.
+- Shared TypeScript and Zod contracts across the frontend and API.
 
-Every visual element — including Three.js 3D meshes, directional/ambient lighting, fog, HUD panels, borders, typography, focus outlines, and state badges — adheres strictly to the mandated 5-color palette:
+Live AI, account, and saved-session features require valid service credentials. Browser support for camera, microphone, vibration, speech synthesis, and clipboard access varies. Run on HTTPS for browser media permissions in a deployed environment.
 
-| Hex Code | Semantic Role |
-| :--- | :--- |
-| `#EDE8F5` | Page background, WebGL scene background, fog, calm cards, inverted text |
-| `#ADBBDA` | Secondary surfaces, inactive 3D meshes, concentric floor rings |
-| `#8697C4` | Wireframes, depth contours, panel borders, muted labels |
-| `#7091E6` | Interactive 3D nodes, active indicators, secondary pills, directional light |
-| `#3D52A0` | Primary typography, primary buttons, active anchors, focus rings |
+## Requirements
 
----
+- Node.js 20 or later (use an active LTS release) and npm.
+- A Supabase project for authentication and persistence.
+- A Google Gemini API key for live AI features.
 
-## 🚀 Core Features & Interaction Flow
+## Run locally
 
-1. **3D Spatial Environment**:
-   - Central morphing low-poly icosahedron sculpture in `#7091E6` with `#3D52A0` wireframe contours and concentric `#ADBBDA` floor rings.
-   - 3 interactive orbiting nodes:
-     - **What-If Pathways** (Core Engine)
-     - **Live Sign & Captions** (Spatial Sensory Sync)
-     - **Vernacular Bridge** (Administrative Dialect Adapter)
-   - Bounded, damped `OrbitControls` with smooth, interruptible camera framing transitions for each node.
-   - Built-in WebGL failure boundary and accessible 2D spatial fallback.
+```bash
+npm ci
+```
 
-2. **Contextual Feature Drawer**:
-   - Opens on node selection via 3D click, HUD pill navigation, or keyboard tab.
-   - Retains 75%+ canvas visibility on desktop; adapts to an accessible bottom sheet on mobile.
+Create `apps/api/.env` with the server settings below and `apps/web/.env` with the browser settings. The demo can be explored without configuring either file; API-backed pages need both services configured.
 
-3. **What-If Accessibility Pathway Demo**:
-   - **Sample Notice**: Clearly marked fictional academic registration notice from Apex Metropolitan University.
-   - **Barrier Selection**: 4 real-world barriers (*"I can't visit the office"*, *"I don't have access to a printer"*, *"I can't make a phone call"*, *"I missed the stated deadline"*).
-   - **Evidence State Simulation**:
-     - *Alternative stated in source* (`source-supported`)
-     - *Alternative not specified* (`information-not-specified`)
-     - *Source wording is unclear* (`source-ambiguous`)
-   - **Dynamic Pathway Analysis**: Highlights policy silences, cites source text, and recommends actionable next steps.
-   - **Editable Clarification Question**: Real-time editable query with 1-click clipboard copy, confirmation feedback, and selectable fallback.
+`apps/api/.env`:
 
-4. **Inclusive Control Dock**:
-   - **Hold to Speak**: Interactive simulated voice stream with continuous audio wave feedback + accessible click-toggle alternative for users with motor limitations (no mic permissions requested).
-   - **Simplify View**: Presentation toggle switching between technical academic text and plain-language phrasing (no fake AI claims).
+```dotenv
+NODE_ENV=development
+PORT=4000
+FRONTEND_ORIGIN=http://localhost:5173
+SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
+SUPABASE_ANON_KEY=YOUR_SUPABASE_ANON_KEY
+SUPABASE_SERVICE_ROLE_KEY=YOUR_SUPABASE_SERVICE_ROLE_KEY
+GEMINI_API_KEY=YOUR_GEMINI_API_KEY
+GEMINI_LIVE_MODEL=gemini-3.8-flash
+GEMINI_SUMMARY_MODEL=gemini-3.8-flash
+```
 
-5. **Calm Mode & Universal Accessibility**:
-   - Respects OS `prefers-reduced-motion` on initial mount.
-   - Manual toggle immediately freezes all 3D rotations, floating oscillations, and camera sweeps.
-   - Switches to a static high-contrast 2D card layout with complete functional equivalence.
-   - Live ARIA region announcements (`aria-live="polite"`) for mode changes, clipboard copy, and drawer interactions.
-   - Multilingual interface labels for English, Hindi, Tamil, and Bengali.
+`apps/web/.env`:
 
----
+```dotenv
+VITE_SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
+VITE_SUPABASE_ANON_KEY=YOUR_SUPABASE_ANON_KEY
+```
 
-## 🛠️ Technology Stack
+Use the anon/publishable key in the browser only. Never put the Supabase service-role key or Gemini key in a `VITE_` variable or commit a real `.env` file. The Vite development server proxies `/api/v1` and `/api/v1/live` to `localhost:4000`.
 
-- **React 18** with **Vite 6** & **TypeScript**
-- **Tailwind CSS** (configured with exclusive 5-color palette tokens)
-- **Three.js** via **@react-three/fiber** & **@react-three/drei**
-- **Lucide React** (icons)
-- **Framer Motion** (2D layout transitions)
-- **Google Fonts Lexend** (typography)
+Apply the SQL migration in `supabase/migrations/` to the Supabase project before relying on saved sessions. Configure Supabase email authentication and redirect URLs for `http://localhost:5173/**` and your deployed site.
 
----
+Start the API and web app in separate terminals from the repository root:
 
-## 🔌 Integration Slots
+```bash
+npm run dev:api
+npm run dev:web
+```
 
-This shell contains typed contracts for future AI and accessibility backend services:
-- `onFeatureSelect`: Spatial navigation event hook.
-- `onVoiceTrigger`: Slot for local Whisper/STT speech-to-text pipeline.
-- `onSimplifyTrigger`: Slot for plain-language LLM summarization.
-- `WhatIfDemo`: Ready to receive live pathway inference payloads (`{ evidenceState, sourceQuote, suggestedAction, defaultQuestion }`).
+Open <http://localhost:5173>. The API health endpoint is <http://localhost:4000/api/v1/health>.
+
+## Checks
+
+```bash
+npm run typecheck
+npm test
+npm run build
+```
+
+The integration tests start local HTTP and WebSocket listeners, so the environment running them must allow loopback connections. Browser-only interactions and assistive hardware still need manual checks; use `docs/accessibility-testing.md` as a checklist. Build output is generated under `apps/web/dist` and `apps/api/dist`.
+
+## Deployment
+
+Deploy the frontend and backend as separate services. The frontend is a static Vite site; the API must run as a persistent Node service that supports WebSocket upgrades. Build from the repository root so npm workspaces can resolve the shared package.
+
+| Service | Build command | Start / publish |
+| --- | --- | --- |
+| API service | `npm ci && npm run build` | `node apps/api/dist/server.js`; set the platform port, `FRONTEND_ORIGIN`, and server environment variables above |
+| Static frontend | `npm ci && npm run build:shared && npm run build:web` | Publish `apps/web/dist`; set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` at build time |
+
+Configure the frontend host to proxy `/api/v1/*` and WebSocket upgrades at `/api/v1/live` to the API origin, or update the frontend API client to use a separately configured API origin before deploying cross-origin. Configure API CORS with the exact frontend origin, Supabase auth redirects with the deployed frontend URL, and HTTPS/WSS. Add a SPA fallback to `index.html` so direct navigation to routes such as `/demo` works.
+
+Set production secrets in the hosting provider's secret manager. Run the database migration before enabling account persistence. Check `GET /api/v1/health` after deployment and exercise the demo, sign-in redirects, API health, and a WebSocket session against the deployed URLs. See `docs/deployment.md`, `docs/privacy-and-data.md`, and `docs/limitations.md` for additional operational detail.
+
+## Project layout
+
+```text
+apps/api/       Express API and WebSocket server
+apps/web/       React and Vite application
+packages/shared Shared schemas and types
+supabase/       Database migration and seed data
+tests/          Unit and integration checks
+docs/           Architecture, accessibility, privacy, and deployment notes
+```
+
+## Privacy and limitations
+
+Review the implementation and Supabase policies in this repository before collecting real user data. Do not treat product goals or documentation claims as a substitute for a security, privacy, or accessibility audit. Get feedback from intended users and test with their assistive technology before any real-world use.
+
+## License
+
+No license file is currently included. Add a `LICENSE` file before describing this repository as MIT licensed or distributing it under another license.

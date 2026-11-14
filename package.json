@@ -1,31 +1,25 @@
 {
-  "name": "aetherlens",
+  "name": "senseweave",
+  "version": "1.0.0",
   "private": true,
-  "version": "0.1.0",
   "type": "module",
+  "description": "SenseWeave - AI-powered real-time environmental awareness and social-context assistant",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
   "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
-    "preview": "vite preview"
-  },
-  "dependencies": {
-    "@react-three/drei": "^9.121.4",
-    "@react-three/fiber": "^8.17.10",
-    "framer-motion": "^11.18.2",
-    "lucide-react": "^0.469.0",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "three": "^0.160.0"
+    "dev:web": "npm run dev --workspace=@senseweave/web",
+    "dev:api": "npm run dev --workspace=@senseweave/api",
+    "build:shared": "npm run build --workspace=@senseweave/shared",
+    "build:api": "npm run build --workspace=@senseweave/api",
+    "build:web": "npm run build --workspace=@senseweave/web",
+    "build": "npm run build:shared && npm run build:api && npm run build:web",
+    "test": "node tests/runAll.js",
+    "typecheck": "npm run typecheck --workspace=@senseweave/shared && npm run typecheck --workspace=@senseweave/api && npm run typecheck --workspace=@senseweave/web"
   },
   "devDependencies": {
-    "@types/react": "^18.3.18",
-    "@types/react-dom": "^18.3.5",
-    "@types/three": "^0.160.0",
-    "@vitejs/plugin-react": "^4.3.4",
-    "autoprefixer": "^10.4.20",
-    "postcss": "^8.4.49",
-    "tailwindcss": "^3.4.17",
-    "typescript": "^5.6.3",
-    "vite": "^6.0.7"
+    "concurrently": "^9.1.2",
+    "typescript": "^5.7.3"
   }
 }

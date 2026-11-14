@@ -1,0 +1,35 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: dark light;
+  }
+
+  body {
+    @apply m-0 p-0 font-sans bg-slate-950 text-slate-100 min-h-screen selection:bg-sense-500 selection:text-white;
+  }
+
+  /* High-visibility accessible focus styles */
+  :focus-visible {
+    @apply outline-none ring-4 ring-sense-400 ring-offset-2 ring-offset-slate-950;
+  }
+}
+
+@layer utilities {
+  /* Reduced motion utilities */
+  @media (prefers-reduced-motion: reduce) {
+    *, ::before, ::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
+  /* High contrast border helpers */
+  .border-accessible {
+    @apply border border-slate-700 hover:border-slate-500 focus:border-sense-400;
+  }
+}
